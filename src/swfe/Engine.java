@@ -9,6 +9,7 @@ import static swfe.internal.Vertex.COMPLETE;
 import static swfe.internal.Vertex.END;
 import static swfe.internal.Vertex.START;
 
+import java.io.Serializable;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -20,7 +21,9 @@ import swfe.internal.Edge;
 import swfe.internal.RuntimeWrapException;
 import swfe.internal.Vertex;
 
-public class Engine<E,V> {
+public class Engine<E,V> implements Serializable {
+
+	private static final long serialVersionUID = 1L;
 
 	private List<Vertex<V>> vertexes = new LinkedList<>();
 	private List<Edge<E>> edges = new LinkedList<>();

@@ -1,5 +1,10 @@
 package swfe.test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+
 import junit.framework.TestCase;
 import swfe.Engine;
 
@@ -64,5 +69,17 @@ public class EngineTest extends TestCase {
 		.end(8, "v8")
 		.link(7, 8, "e78")
 		.complete(new DebugWorkflowEventListener());
+	}
+
+	public void testSerialization() throws Exception {
+		Engine<Object,Object> e = new Engine<>()
+		.start(1, null)
+		.end(2, null)
+		.link(1, 2, null);
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		new ObjectOutputStream(out).writeObject(e);
+		byte[] data = out.toByteArray();
+		Engine<Object, Object> e2 = (Engine<Object, Object>) new ObjectInputStream(new ByteArrayInputStream(data)).readObject();
+		e2.complete(new DebugWorkflowEventListener());
 	}
 }
