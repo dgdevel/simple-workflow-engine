@@ -4,6 +4,7 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.Date;
 
 import junit.framework.TestCase;
 import swfe.Engine;
@@ -37,6 +38,19 @@ public class EngineTest extends TestCase {
 		.link(1, 2, null)
 		.link(2, 3, null)
 		.complete(new DebugWorkflowEventListener());
+	}
+
+	public void testSteppedStraightPath() {
+		Engine<Object, Object> e =new Engine<Object, Object>()
+		.start(1, null)
+		.define(2, null)
+		.end(3, null)
+		.link(1, 2, null)
+		.link(2, 3, null);
+		while (e.hasWorkToDo()) {
+			System.out.println("[" + new Date() + "] has active nodes");
+			e.complete(new DebugCompleteOnceWorkflowEventListener());
+		}
 	}
 
 	public void testMultiPath() {

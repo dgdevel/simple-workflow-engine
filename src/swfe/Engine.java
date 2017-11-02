@@ -38,7 +38,7 @@ public class Engine<E,V> implements Serializable {
 		return this;
 	}
 
-	private Vertex<V> lookup(final long id) {
+	private Vertex<V> lookupVertex(final long id) {
 		return vertexes.stream().filter((v) -> v.id == id).findFirst().orElse(null);
 	}
 
@@ -67,7 +67,7 @@ public class Engine<E,V> implements Serializable {
 	}
 
 	private Engine<E,V> define(final long id, final V payload, int vflags) {
-		if (lookup(id) != null) {
+		if (lookupVertex(id) != null) {
 			throw new IllegalArgumentException("vertex " + id + " exists");
 		}
 		flags = unset(flags, VALIDATED);
@@ -146,7 +146,7 @@ public class Engine<E,V> implements Serializable {
 		HashSet<Long> analyzed = new HashSet<>();
 		while (!toAnalyzeQueue.isEmpty()) {
 			long id = toAnalyzeQueue.poll();
-			if (isset(lookup(id).flags, END)) {
+			if (isset(lookupVertex(id).flags, END)) {
 				continue;
 			}
 			if (analyzed.contains(id)) {
@@ -157,16 +157,18 @@ public class Engine<E,V> implements Serializable {
 				throw new IllegalStateException("dead vertex " + id + " is not an end vertex");
 			}
 			for (Edge<E> e : edges) {
-				toAnalyzeQueue.offer(lookup(e.to).id);
+				toAnalyzeQueue.offer(lookupVertex(e.to).id);
 			}
 			analyzed.add(id);
 		}
 		flags = set(flags, VALIDATED);
 	}
 
-	public Engine<E,V> complete(WorkflowEventListener<V, E> listener) {
-		validate();
-		// starting nodes
+	public boolean hasWorkToDo() {
+		return vertexes.stream().filter((v) -> isset(v.flags, ACTIVE) || isset(v.flags, START) && !isset(v.flags, ACTIVE) && !isset(v.flags, COMPLETE)).count() > 0;
+	}
+
+	private boolean completeStartingNodes(WorkflowEventListener<V, E> listener) {
 		boolean stateChanged = false;
 		for (Vertex<V> v : collect(START)) {
 			if (!isset(v.flags, ACTIVE) && !isset(v.flags, COMPLETE)) {
@@ -179,15 +181,19 @@ public class Engine<E,V> implements Serializable {
 				stateChanged = true;
 			}
 		}
-		// active nodes
+		return stateChanged;
+	}
+
+	private boolean completeActiveVertexes(WorkflowEventListener<V, E> listener) {
+		boolean stateChanged = false;
 		for (Vertex<V> v : collect(ACTIVE)) {
-			boolean canComplete = false;
+			boolean canCompleteVertex = false;
 			try {
-				canComplete = listener.canComplete(v.id, v.payload);
+				canCompleteVertex = listener.canComplete(v.id, v.payload);
 			} catch (Exception ex) {
 				throw new RuntimeWrapException(ex);
 			}
-			if (canComplete) {
+			if (canCompleteVertex) {
 				try {
 					listener.onVertexComplete(v.id, v.payload);
 				} catch (Exception ex) {
@@ -195,17 +201,28 @@ public class Engine<E,V> implements Serializable {
 				}
 				v.flags = unset(v.flags, ACTIVE);
 				v.flags = set(v.flags, COMPLETE);
+				stateChanged = true;
 				for (Edge<E> edge : edgesFrom(v.id)) {
 					try {
 						listener.onEdgeComplete(edge.from, edge.to, edge.payload);
 					} catch (Exception ex) {
 						throw new RuntimeWrapException(ex);
 					}
-					Vertex<V> target = lookup(edge.to);
-					// can be activated? if every vertex pointing to it is been completed
+				}
+			}
+		}
+		return stateChanged;
+	}
+
+	private boolean activateVertexes(WorkflowEventListener<V, E> listener) {
+		boolean stateChanged = false;
+		for (Vertex<V> v : collect(COMPLETE)) {
+			for (Edge<E> ptr : edgesFrom(v.id)) {
+				Vertex<V> target = lookupVertex(ptr.to);
+				if (!isset(target.flags, ACTIVE) && !isset(target.flags, COMPLETE)) {
 					boolean canBeActivated = true;
 					for (Edge<E> ptrEdge : edgesTo(target.id)) {
-						if (!isset(lookup(ptrEdge.from).flags, COMPLETE)) {
+						if (!isset(lookupVertex(ptrEdge.from).flags, COMPLETE)) {
 							canBeActivated = false;
 							break;
 						}
@@ -217,14 +234,24 @@ public class Engine<E,V> implements Serializable {
 							throw new RuntimeWrapException(ex);
 						}
 						target.flags = set(target.flags, ACTIVE);
+						stateChanged = true;
 					}
 				}
 			}
-			stateChanged = true;
 		}
-		if (stateChanged) {
-			return complete(listener);
-		}
+		return stateChanged;
+	}
+
+	public Engine<E,V> complete(WorkflowEventListener<V, E> listener) {
+		validate();
+		// starting nodes
+		completeStartingNodes(listener);
+		boolean stateChanged = false;
+		do {
+			stateChanged = false;
+			stateChanged = completeActiveVertexes(listener) || stateChanged;
+			stateChanged = activateVertexes(listener) || stateChanged;
+		} while (stateChanged == true);
 		return this;
 	}
 
